@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goa Constrictors — Data Baker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Roboto+Mono:wght@400;500;700&family=Spectral:ital@0;1&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#1a1612;color:#e8dcc4;font-family:'Spectral',serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .card{width:100%;max-width:560px;background:linear-gradient(160deg,#37291c,#1a1612);border:1px solid #9a7728;border-radius:8px;padding:28px;}
+  h1{font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;color:#c8a04f;font-size:26px;line-height:1;letter-spacing:.02em;}
+  .sub{font-style:italic;color:#b09a72;margin:8px 0 20px;font-size:15px;line-height:1.5;}
+  label{font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#9a7728;display:block;margin-bottom:6px;}
+  input{width:100%;background:#2b2118;border:1.5px solid #9a7728;border-radius:4px;padding:13px 15px;font-size:16px;color:#e8dcc4;font-family:'Roboto Mono',monospace;outline:none;text-align:center;}
+  input:focus{border-color:#c8a04f;}
+  button{width:100%;font-family:'Oswald',sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:#1a1612;background:#c8a04f;border:none;border-radius:4px;padding:14px;cursor:pointer;margin-top:14px;box-shadow:0 4px 0 #9a7728;}
+  button:active{transform:translateY(3px);box-shadow:0 1px 0 #9a7728;}
+  button:disabled{background:#37291c;color:#897455;box-shadow:none;}
+  #log{margin-top:18px;font-family:'Roboto Mono',monospace;font-size:12px;line-height:1.7;color:#b09a72;max-height:320px;overflow-y:auto;background:#14100c;border:1px solid #4a3a26;border-radius:4px;padding:14px;display:none;}
+  #log.show{display:block;}
+  .ok{color:#7da06a;}.warn{color:#d98a3a;}.big{color:#c8a04f;font-weight:700;}
+  #dl{display:none;margin-top:14px;}
+  #dl.show{display:block;}
+  .step{font-size:13px;color:#b09a72;line-height:1.7;margin-top:16px;border-top:1px solid #4a3a26;padding-top:14px;}
+  .step b{color:#c8a04f;}
+  code{background:#2b2118;padding:1px 6px;border-radius:3px;font-family:'Roboto Mono',monospace;font-size:12px;color:#e3c478;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Data Baker</h1>
+  <div class="sub">Run this once. It pulls your league's full history from Sleeper and gives you a <code>league-data.js</code> file to bake into the app — so every device opens pre-loaded, no waiting.</div>
+
+  <label>Sleeper League ID</label>
+  <input id="lg" inputmode="numeric" placeholder="paste the long number" />
+  <button id="go" onclick="run()">Fetch & Bake Data</button>
+
+  <div id="log"></div>
+  <button id="dl" onclick="download()">⬇ Download league-data.js</button>
+
+  <div class="step" id="steps" style="display:none">
+    <b>Next:</b> put <code>league-data.js</code> in your GitHub repo (same folder as <code>index.html</code>), commit, and you're done. The app will load it automatically and skip the slow fetch on every device.
+  </div>
+</div>
+
+<script>
+const SLEEPER="https://api.sleeper.app/v1";
+let BAKED=null;
+
+function log(msg,cls){const l=document.getElementById('log');l.classList.add('show');l.innerHTML+='<div'+(cls?(' class="'+cls+'"'):'')+'>'+msg+'</div>';l.scrollTop=l.scrollHeight;}
+async function sf(path){const r=await fetch(SLEEPER+path);if(!r.ok)throw new Error('Sleeper '+r.status+' on '+path);return r.json();}
+
+async function run(){
+  const id=document.getElementById('lg').value.trim();
+  if(!/^\d+$/.test(id)){log('⚠ Please paste a valid numeric League ID.','warn');return;}
+  const btn=document.getElementById('go');btn.disabled=true;btn.textContent='Fetching…';
+  document.getElementById('log').innerHTML='';document.getElementById('dl').classList.remove('show');
+
+  try{
+    log('Reading current league…');
+    const league=await sf('/league/'+id);
+    log('✓ '+league.name+' ('+league.season+')','ok');
+
+    // Walk chain for all season league IDs
+    log('Finding past seasons…');
+    const seasonIds=[];let prev=league.previous_league_id,guard=0;
+    while(prev&&prev!=='0'&&guard<14){const pl=await sf('/league/'+prev);seasonIds.push({leagueId:prev,season:pl.season});prev=pl.previous_league_id;guard++;}
+    log('✓ Found '+seasonIds.length+' past season'+(seasonIds.length!==1?'s':'')+(seasonIds.length?': '+seasonIds.map(s=>s.season).join(', '):''),'ok');
+
+    // Fetch all seasons' heavy data in parallel
+    log('Pulling rosters, drafts, trades & FAAB for every season…');
+    const history=await Promise.all(seasonIds.map(async si=>{
+      const weeks=[];for(let w=1;w<=17;w++)weeks.push(w);
+      const [pr,pu,wb,ds,...txnA]=await Promise.all([
+        sf('/league/'+si.leagueId+'/rosters').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/users').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/winners_bracket').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/drafts').catch(()=>[]),
+        ...weeks.map(w=>sf('/league/'+si.leagueId+'/transactions/'+w).catch(()=>[]))
+      ]);
+      let picks=[];if(ds&&ds.length)picks=await sf('/draft/'+ds[0].draft_id+'/picks').catch(()=>[]);
+      let champId=null,champName=null;const fin=(wb||[]).find(m=>m.p===1);
+      if(fin&&fin.w){const wr=pr.find(r=>r.roster_id===fin.w);if(wr){champId=wr.owner_id;const wu=pu.find(u=>u.user_id===wr.owner_id);champName=wu?((wu.metadata&&wu.metadata.team_name)||wu.display_name):null;}}
+      const txns=txnA.flat().filter(t=>t&&t.status==='complete');
+      log('  · '+si.season+': '+pr.length+' teams, '+picks.length+' picks, '+txns.length+' moves','ok');
+      // slim to what the tendency engine needs
+      return {
+        season:si.season,leagueId:si.leagueId,champion:champName,championId:champId,
+        rosters:pr.map(r=>({roster_id:r.roster_id,owner_id:r.owner_id,settings:r.settings})),
+        users:pu.map(u=>({user_id:u.user_id,display_name:u.display_name,metadata:u.metadata?{team_name:u.metadata.team_name}:null})),
+        picks:picks.map(p=>({picked_by:p.picked_by,roster_id:p.roster_id,round:p.round,metadata:p.metadata?{position:p.metadata.position,amount:p.metadata.amount}:null})),
+        transactions:txns.map(t=>({type:t.type,roster_ids:t.roster_ids,adds:t.adds,drops:t.drops,settings:t.settings?{waiver_bid:t.settings.waiver_bid}:null,leg:t.leg}))
+      };
+    }));
+
+    BAKED={leagueId:id,previousLeagueId:league.previous_league_id||'',builtAt:Date.now(),season:league.season,history:history};
+    const kb=Math.round(JSON.stringify(BAKED).length/1024);
+    log('','');
+    log('✓ DONE — baked '+history.length+' seasons ('+kb+' KB)','big');
+    log('Click the download button below.','ok');
+    document.getElementById('dl').classList.add('show');
+    document.getElementById('steps').style.display='block';
+  }catch(e){
+    log('✗ '+e.message,'warn');
+    log('If this says "Failed to fetch", Sleeper may be rate-limiting — wait a minute and try again.','warn');
+  }
+  btn.disabled=false;btn.textContent='Fetch & Bake Data';
+}
+
+function download(){
+  if(!BAKED)return;
+  const content='// Goa Constrictors — pre-baked league history\n// Generated '+new Date().toISOString()+'\n// Drop this file next to index.html; the app loads it automatically.\nwindow.GOA_BAKED_DATA = '+JSON.stringify(BAKED)+';\n';
+  const blob=new Blob([content],{type:'text/javascript'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='league-data.js';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+</script>
+</body>
+</html>
