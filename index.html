@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a1410">
+<title>Goa Constrictors — War Room</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;}
+
+  :root{
+    --bg:#0a1410;--bg2:#0f1d16;--panel:#13261c;--panel2:#1a3325;
+    --venom:#c6ff3a;--venom2:#9ed628;--gold:#e8b923;--gold2:#c99a0f;
+    --scale:#2d5a3d;--scale2:#1f4a2e;--snake:#3a7d4f;
+    --txt:#e8f5e9;--txt2:#a8c9b0;--txt3:#6b8a73;
+    --danger:#ff4d4d;--win:#4dff88;--loss:#ff6b6b;
+    --line:#1f3d2a;
+  }
+
+  html,body{width:100%;height:100%;background:var(--bg);color:var(--txt);font-family:'Barlow Condensed',sans-serif;overflow:hidden;}
+
+  /* snake-scale texture overlay */
+  body::before{
+    content:'';position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.4;
+    background-image:radial-gradient(circle at 50% 0,rgba(198,255,58,.04) 0,transparent 60%),
+      repeating-linear-gradient(135deg,transparent,transparent 14px,rgba(45,90,61,.06) 14px,rgba(45,90,61,.06) 15px);
+  }
+
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;z-index:1;}
+
+  /* ════ LOADING / SETUP ════ */
+  #setup{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;gap:18px;}
+  #setup.hidden{display:none;}
+  .snake-logo{font-size:64px;line-height:1;animation:coil 3s ease-in-out infinite;}
+  @keyframes coil{0%,100%{transform:rotate(-4deg) scale(1);}50%{transform:rotate(4deg) scale(1.06);}}
+  #setup h1{font-family:'Anton',sans-serif;font-size:34px;letter-spacing:.02em;color:var(--venom);text-shadow:0 0 30px rgba(198,255,58,.4);line-height:.95;text-transform:uppercase;}
+  #setup h1 span{display:block;font-size:15px;color:var(--gold);letter-spacing:.35em;margin-top:4px;}
+  #setup p{font-size:16px;color:var(--txt2);max-width:340px;line-height:1.5;}
+  #setup label{font-size:13px;color:var(--txt3);letter-spacing:.18em;text-transform:uppercase;align-self:flex-start;margin-left:4px;margin-bottom:-8px;}
+  .setup-field{width:100%;max-width:380px;display:flex;flex-direction:column;gap:8px;}
+  #league-input{
+    width:100%;background:var(--panel);border:1.5px solid var(--scale);border-radius:10px;
+    padding:14px 16px;font-size:17px;color:var(--txt);font-family:'JetBrains Mono',monospace;
+    outline:none;text-align:center;letter-spacing:.05em;transition:border-color .2s;
+  }
+  #league-input:focus{border-color:var(--venom);box-shadow:0 0 16px rgba(198,255,58,.2);}
+  #league-input::placeholder{color:var(--txt3);}
+  #connect-btn{
+    width:100%;max-width:380px;font-family:'Anton',sans-serif;font-size:19px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--bg);background:var(--venom);border:none;border-radius:10px;
+    padding:15px;cursor:pointer;box-shadow:0 0 24px rgba(198,255,58,.3);transition:all .2s;
+  }
+  #connect-btn:active{transform:scale(.98);background:var(--venom2);}
+  #connect-btn:disabled{background:var(--scale);color:var(--txt3);box-shadow:none;}
+  .setup-help{font-size:13px;color:var(--txt3);line-height:1.6;max-width:340px;}
+  .setup-help a{color:var(--gold);}
+  #setup-error{color:var(--danger);font-size:14px;min-height:18px;}
+  .setup-spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--scale);border-top-color:var(--venom);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ════ HEADER ════ */
+  #hdr{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:linear-gradient(180deg,var(--bg2),transparent);border-bottom:1px solid var(--line);}
+  #hdr-left{display:flex;align-items:center;gap:10px;}
+  #hdr-snake{font-size:26px;animation:coil 3s ease-in-out infinite;}
+  #hdr-title{font-family:'Anton',sans-serif;font-size:18px;color:var(--venom);letter-spacing:.02em;line-height:.9;text-transform:uppercase;}
+  #hdr-title span{display:block;font-size:9px;color:var(--gold);letter-spacing:.2em;font-family:'Barlow Condensed';font-weight:600;}
+  #hdr-rec{text-align:right;font-family:'JetBrains Mono',monospace;}
+  #hdr-rec .rec{font-size:18px;font-weight:700;color:var(--txt);}
+  #hdr-rec .lbl{font-size:8px;color:var(--txt3);letter-spacing:.15em;text-transform:uppercase;}
+
+  /* ════ TABS ════ */
+  #tabs{flex-shrink:0;display:flex;background:var(--bg2);border-bottom:1px solid var(--line);}
+  .tab{flex:1;padding:11px 4px;text-align:center;font-family:'Barlow Condensed';font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt3);cursor:pointer;border-bottom:2.5px solid transparent;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .tab .ti{font-size:16px;}
+  .tab.active{color:var(--venom);border-bottom-color:var(--venom);background:rgba(198,255,58,.05);}
+
+  /* ════ VIEWS ════ */
+  .view{flex:1;overflow-y:auto;display:none;flex-direction:column;}
+  .view.active{display:flex;}
+  .view::-webkit-scrollbar{width:3px;}
+  .view::-webkit-scrollbar-thumb{background:var(--scale);border-radius:2px;}
+
+  /* ════ ROSTER VIEW ════ */
+  #roster-view{padding:14px;gap:12px;}
+  .team-banner{background:linear-gradient(135deg,var(--panel2),var(--panel));border:1px solid var(--scale);border-radius:14px;padding:16px;position:relative;overflow:hidden;}
+  .team-banner::after{content:'🐍';position:absolute;right:-10px;bottom:-20px;font-size:90px;opacity:.07;transform:rotate(-15deg);}
+  .team-banner .tname{font-family:'Anton',sans-serif;font-size:24px;color:var(--venom);text-transform:uppercase;line-height:1;letter-spacing:.01em;}
+  .team-banner .towner{font-size:14px;color:var(--txt2);font-weight:600;margin-top:2px;}
+  .team-stats{display:flex;gap:18px;margin-top:12px;}
+  .team-stat{display:flex;flex-direction:column;}
+  .team-stat .v{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;color:var(--gold);line-height:1;}
+  .team-stat .l{font-size:10px;color:var(--txt3);letter-spacing:.1em;text-transform:uppercase;margin-top:3px;}
+  .section-label{font-family:'Anton',sans-serif;font-size:14px;color:var(--txt2);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin:4px 2px;}
+  .section-label::before{content:'';width:3px;height:14px;background:var(--venom);border-radius:2px;}
+  .player-card{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;transition:border-color .2s;}
+  .player-card:active{border-color:var(--venom);}
+  .pc-pos{flex-shrink:0;width:38px;height:38px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'Anton',sans-serif;font-size:13px;color:var(--bg);}
+  .pos-QB{background:#ff6b9d;}.pos-RB{background:#4dd0a8;}.pos-WR{background:#ffa94d;}.pos-TE{background:#9d8cff;}.pos-K{background:#a8c9b0;}.pos-DEF{background:#c6ff3a;}.pos-FLEX{background:#888;}
+  .pc-info{flex:1;min-width:0;}
+  .pc-name{font-size:16px;font-weight:700;color:var(--txt);line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pc-meta{font-size:12px;color:var(--txt3);font-family:'JetBrains Mono',monospace;}
+  .pc-bench{opacity:.6;}
+  .empty-msg{text-align:center;color:var(--txt3);font-size:15px;padding:30px;line-height:1.6;}
+
+  /* ════ LEAGUE VIEW ════ */
+  #league-view{padding:14px;gap:10px;}
+  .standings-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px;}
+  .standings-row.is-me{border-color:var(--venom);background:rgba(198,255,58,.06);}
+  .sr-rank{flex-shrink:0;width:26px;font-family:'Anton',sans-serif;font-size:16px;color:var(--gold);text-align:center;}
+  .sr-team{flex:1;min-width:0;}
+  .sr-name{font-size:15px;font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;}
+  .sr-owner{font-size:11px;color:var(--txt3);}
+  .sr-rec{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--txt2);flex-shrink:0;}
+  .sr-pts{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt3);flex-shrink:0;width:54px;text-align:right;}
+
+  /* ════ CHAT VIEW ════ */
+  #chat-view{padding:0;}
+  #chat-scroll{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;}
+  #chat-scroll::-webkit-scrollbar{width:3px;}#chat-scroll::-webkit-scrollbar-thumb{background:var(--scale);}
+  .msg-u{align-self:flex-end;max-width:85%;background:linear-gradient(135deg,var(--venom),var(--venom2));color:var(--bg);border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:15px;font-weight:600;line-height:1.4;}
+  .msg-a{align-self:flex-start;max-width:90%;display:flex;gap:9px;align-items:flex-start;}
+  .ma-snake{flex-shrink:0;width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--scale),var(--scale2));display:flex;align-items:center;justify-content:center;font-size:17px;border:1px solid var(--snake);}
+  .ma-bubble{background:var(--panel);border:1px solid var(--line);border-left:2.5px solid var(--venom);border-radius:4px 14px 14px 4px;padding:11px 14px;font-size:15px;color:var(--txt);line-height:1.6;}
+  .ma-bubble strong{color:var(--venom);font-weight:700;}
+  .ma-name{font-family:'Anton',sans-serif;font-size:11px;color:var(--venom);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;display:block;}
+  .searching{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--gold);margin-top:6px;font-family:'JetBrains Mono',monospace;}
+  .dots{display:flex;gap:4px;align-items:center;height:18px;}
+  .dots span{width:5px;height:5px;border-radius:50%;background:var(--venom);animation:bop 1.1s ease-in-out infinite;}
+  .dots span:nth-child(2){animation-delay:.15s;}.dots span:nth-child(3){animation-delay:.3s;}
+  @keyframes bop{0%,60%,100%{transform:translateY(0);opacity:.3;}30%{transform:translateY(-5px);opacity:1;}}
+
+  #chat-welcome{text-align:center;padding:24px 12px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+  #chat-welcome .snake-logo{font-size:48px;}
+  #chat-welcome h2{font-family:'Anton',sans-serif;font-size:20px;color:var(--venom);text-transform:uppercase;letter-spacing:.02em;}
+  #chat-welcome p{font-size:14px;color:var(--txt2);max-width:300px;line-height:1.5;}
+  #suggestions{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:6px;}
+  .sugg{background:var(--panel);border:1px solid var(--scale);border-radius:20px;padding:7px 13px;font-size:13px;font-weight:600;color:var(--txt2);cursor:pointer;transition:all .2s;}
+  .sugg:active{border-color:var(--venom);color:var(--venom);background:rgba(198,255,58,.08);}
+
+  /* ════ INPUT BAR ════ */
+  #input-bar{flex-shrink:0;border-top:1px solid var(--line);background:var(--bg2);padding:10px 12px;display:flex;flex-direction:column;gap:8px;}
+  #voice-status{font-size:12px;color:var(--txt3);font-family:'JetBrains Mono',monospace;min-height:16px;letter-spacing:.03em;display:none;}
+  #voice-status.show{display:block;}
+  #input-row{display:flex;gap:8px;align-items:flex-end;}
+  #mic-btn{flex-shrink:0;width:46px;height:46px;border-radius:50%;background:var(--panel);border:1.5px solid var(--scale);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--venom);transition:all .2s;}
+  #mic-btn.active{background:var(--venom);border-color:var(--venom);color:var(--bg);box-shadow:0 0 20px rgba(198,255,58,.5);animation:micpulse 1s ease-in-out infinite;}
+  @keyframes micpulse{0%,100%{box-shadow:0 0 12px rgba(198,255,58,.4);}50%{box-shadow:0 0 24px rgba(198,255,58,.7);}}
+  #txt-input{flex:1;background:var(--panel);border:1.5px solid var(--scale);border-radius:22px;padding:12px 16px;font-size:16px;color:var(--txt);font-family:'Barlow Condensed';font-weight:500;resize:none;min-height:46px;max-height:110px;outline:none;line-height:1.3;}
+  #txt-input:focus{border-color:var(--venom);}
+  #txt-input::placeholder{color:var(--txt3);}
+  #send-btn{flex-shrink:0;width:46px;height:46px;border-radius:50%;background:var(--venom);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--bg);transition:all .2s;}
+  #send-btn:active{transform:scale(.95);background:var(--venom2);}
+  #send-btn:disabled{background:var(--scale);color:var(--txt3);}
+
+  /* settings gear */
+  #gear{position:absolute;top:12px;right:14px;font-size:18px;color:var(--txt3);cursor:pointer;z-index:5;display:none;}
+</style>
+</head>
+<body>
+
+<!-- ════════ SETUP SCREEN ════════ -->
+<div id="setup">
+  <div class="snake-logo">🐍</div>
+  <h1>Goa Constrictors<span>A.I. WAR ROOM</span></h1>
+  <p>Your league's intelligence command center. Connect to Sleeper to load every roster, rivalry, and record.</p>
+  <div class="setup-field">
+    <label>Sleeper League ID</label>
+    <input id="league-input" type="text" inputmode="numeric" placeholder="e.g. 1124839502847..." />
+  </div>
+  <button id="connect-btn" onclick="connectLeague()">Enter the War Room</button>
+  <div id="setup-error"></div>
+  <div class="setup-help">
+    Find your League ID in the Sleeper app URL, or on web at sleeper.com — it's the long number in your league's address. Paste it above.
+  </div>
+</div>
+
+<!-- ════════ MAIN APP ════════ -->
+<div id="app" style="display:none;">
+  <div id="gear" onclick="resetLeague()">⚙</div>
+
+  <div id="hdr">
+    <div id="hdr-left">
+      <div id="hdr-snake">🐍</div>
+      <div id="hdr-title">Goa Constrictors<span id="hdr-sub">WAR ROOM</span></div>
+    </div>
+    <div id="hdr-rec">
+      <div class="rec" id="hdr-record">—</div>
+      <div class="lbl" id="hdr-record-lbl">Your Record</div>
+    </div>
+  </div>
+
+  <div id="tabs">
+    <div class="tab active" data-view="chat-view" onclick="switchView('chat-view',this)"><span class="ti">🧠</span>Coach</div>
+    <div class="tab" data-view="roster-view" onclick="switchView('roster-view',this)"><span class="ti">📋</span>My Team</div>
+    <div class="tab" data-view="league-view" onclick="switchView('league-view',this)"><span class="ti">🏆</span>League</div>
+  </div>
+
+  <!-- CHAT -->
+  <div id="chat-view" class="view active">
+    <div id="chat-scroll">
+      <div id="chat-welcome">
+        <div class="snake-logo">🐍</div>
+        <h2>Your AI GM is ready</h2>
+        <p id="welcome-text">Ask me anything about your team, the league, matchups, or who to start. I know your whole league and can check the latest news.</p>
+        <div id="suggestions"></div>
+      </div>
+    </div>
+    <div id="input-bar">
+      <div id="voice-status">// standby //</div>
+      <div id="input-row">
+        <button id="mic-btn" onclick="toggleListen()" aria-label="Voice">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+        </button>
+        <textarea id="txt-input" placeholder="Ask your AI GM anything..." rows="1" onkeydown="onKey(event)" oninput="autoGrow(this)"></textarea>
+        <button id="send-btn" onclick="sendText()" aria-label="Send">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROSTER -->
+  <div id="roster-view" class="view">
+    <div id="roster-content"><div class="empty-msg">Loading your roster...</div></div>
+  </div>
+
+  <!-- LEAGUE -->
+  <div id="league-view" class="view">
+    <div id="league-content"><div class="empty-msg">Loading league standings...</div></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  CONFIG — your Cloudflare worker (already set up)
+// ════════════════════════════════════════════════════════════
+const WORKER_URL = "https://late-water-a0c8.joshberger35.workers.dev";
+const SLEEPER_USERNAME = "jbergs31";
+const MODEL = "claude-sonnet-4-6";
+// ════════════════════════════════════════════════════════════
+
+const SLEEPER = "https://api.sleeper.app/v1";
+let LG = {            // everything we load about the league
+  leagueId:null, league:null, season:null,
+  users:[], rosters:[], players:{}, // players is the big NFL map
+  myUserId:null, myRoster:null, myTeamName:null,
+  standings:[], history:[], nflState:null
+};
+let history = [];      // chat history
+let busy=false, recognition=null, isListening=false, isSpeaking=false;
+
+// ── PERSISTENCE (chat history saved in browser) ──
+function saveChat(){ try{ localStorage.setItem('goa_chat', JSON.stringify(history)); }catch(e){} }
+function loadChat(){ try{ const s=localStorage.getItem('goa_chat'); if(s) history=JSON.parse(s); }catch(e){} }
+function saveLeagueId(id){ try{ localStorage.setItem('goa_league', id); }catch(e){} }
+function getSavedLeagueId(){ try{ return localStorage.getItem('goa_league'); }catch(e){ return null; } }
+
+// ════════ SLEEPER DATA LOADING ════════
+async function sfetch(path){
+  const r = await fetch(SLEEPER + path);
+  if(!r.ok) throw new Error("Sleeper "+r.status);
+  return r.json();
+}
+
+async function connectLeague(){
+  const input = document.getElementById('league-input').value.trim();
+  const err = document.getElementById('setup-error');
+  if(!input || !/^\d+$/.test(input)){
+    err.textContent = "Please paste a valid numeric League ID.";
+    return;
+  }
+  const btn = document.getElementById('connect-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="setup-spinner"></span>Connecting...';
+  err.textContent = "";
+
+  try {
+    await loadEverything(input);
+    saveLeagueId(input);
+    document.getElementById('setup').classList.add('hidden');
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('gear').style.display = 'block';
+    renderAll();
+    initVoice();
+    loadChat();
+    if(history.length) replayChat(); else showWelcome();
+  } catch(e) {
+    err.textContent = "Couldn't load that league: " + e.message + ". Double-check the ID.";
+    btn.disabled = false;
+    btn.innerHTML = 'Enter the War Room';
+  }
+}
+
+async function loadEverything(leagueId){
+  LG.leagueId = leagueId;
+  // Core league + NFL state in parallel
+  const [league, nflState, users, rosters] = await Promise.all([
+    sfetch('/league/'+leagueId),
+    sfetch('/state/nfl'),
+    sfetch('/league/'+leagueId+'/users'),
+    sfetch('/league/'+leagueId+'/rosters')
+  ]);
+  LG.league = league;
+  LG.season = league.season;
+  LG.nflState = nflState;
+  LG.users = users;
+  LG.rosters = rosters;
+
+  // Identify "me"
+  const me = users.find(u => (u.display_name||'').toLowerCase() === SLEEPER_USERNAME.toLowerCase());
+  if(me){
+    LG.myUserId = me.user_id;
+    LG.myRoster = rosters.find(r => r.owner_id === me.user_id);
+    LG.myTeamName = (me.metadata && me.metadata.team_name) || me.display_name;
+  }
+
+  // Player map (big file ~5MB, cached by browser)
+  LG.players = await sfetch('/players/nfl');
+
+  // Build standings
+  buildStandings();
+
+  // Walk league history backwards through previous_league_id
+  LG.history = [];
+  let prevId = league.previous_league_id;
+  let guard = 0;
+  while(prevId && prevId !== "0" && guard < 12){
+    try {
+      const pl = await sfetch('/league/'+prevId);
+      const pr = await sfetch('/league/'+prevId+'/rosters');
+      const pu = await sfetch('/league/'+prevId+'/users');
+      LG.history.push({ season: pl.season, league: pl, rosters: pr, users: pu });
+      prevId = pl.previous_league_id;
+    } catch(e){ break; }
+    guard++;
+  }
+}
+
+function buildStandings(){
+  const userById = {};
+  LG.users.forEach(u => userById[u.user_id] = u);
+  LG.standings = LG.rosters.map(r => {
+    const u = userById[r.owner_id] || {};
+    const s = r.settings || {};
+    return {
+      rosterId: r.roster_id,
+      ownerId: r.owner_id,
+      teamName: (u.metadata && u.metadata.team_name) || u.display_name || ('Team '+r.roster_id),
+      owner: u.display_name || '—',
+      wins: s.wins||0, losses: s.losses||0, ties: s.ties||0,
+      pf: ((s.fpts||0) + (s.fpts_decimal||0)/100),
+      pa: ((s.fpts_against||0) + (s.fpts_against_decimal||0)/100),
+      isMe: r.owner_id === LG.myUserId
+    };
+  }).sort((a,b)=> (b.wins-a.wins) || (b.pf-a.pf));
+}
+
+function playerName(pid){
+  const p = LG.players[pid];
+  if(!p) return pid;
+  if(p.full_name) return p.full_name;
+  if(p.first_name) return p.first_name+' '+(p.last_name||'');
+  return pid;
+}
+function playerInfo(pid){
+  const p = LG.players[pid] || {};
+  return {
+    name: playerName(pid),
+    pos: p.position || '—',
+    team: p.team || 'FA'
+  };
+}
+
+// ════════ RENDERING ════════
+function renderAll(){ renderHeader(); renderRoster(); renderLeague(); buildSuggestions(); }
+
+function renderHeader(){
+  if(LG.myRoster){
+    const s = LG.myRoster.settings||{};
+    document.getElementById('hdr-record').textContent = (s.wins||0)+'-'+(s.losses||0)+(s.ties?('-'+s.ties):'');
+  } else {
+    document.getElementById('hdr-record').textContent = '—';
+    document.getElementById('hdr-record-lbl').textContent = 'Spectator';
+  }
+  const wk = (LG.nflState && LG.nflState.week) ? LG.nflState.week : '';
+  document.getElementById('hdr-sub').textContent = LG.season ? (LG.season + (wk?(' · WK '+wk):'')) : 'WAR ROOM';
+}
+
+function renderRoster(){
+  const el = document.getElementById('roster-content');
+  if(!LG.myRoster){
+    el.innerHTML = '<div class="empty-msg">No team found for <b>'+SLEEPER_USERNAME+'</b> in this league.<br>You can still use the Coach and League tabs.</div>';
+    return;
+  }
+  const s = LG.myRoster.settings||{};
+  const starters = LG.myRoster.starters || [];
+  const allP = LG.myRoster.players || [];
+  const bench = allP.filter(p => !starters.includes(p));
+
+  let html = `<div class="team-banner">
+    <div class="tname">${esc(LG.myTeamName||'My Team')}</div>
+    <div class="towner">@${esc(SLEEPER_USERNAME)}</div>
+    <div class="team-stats">
+      <div class="team-stat"><div class="v">${(s.wins||0)}-${(s.losses||0)}</div><div class="l">Record</div></div>
+      <div class="team-stat"><div class="v">${((s.fpts||0)+(s.fpts_decimal||0)/100).toFixed(1)}</div><div class="l">Points For</div></div>
+      <div class="team-stat"><div class="v">${rankSuffix(myRank())}</div><div class="l">Standing</div></div>
+    </div>
+  </div>`;
+
+  html += `<div class="section-label">Starters</div>`;
+  starters.forEach(pid => { if(pid && pid!=='0') html += playerCardHTML(pid, false); });
+
+  if(bench.length){
+    html += `<div class="section-label">Bench</div>`;
+    bench.forEach(pid => { if(pid && pid!=='0') html += playerCardHTML(pid, true); });
+  }
+  el.innerHTML = html;
+}
+
+function playerCardHTML(pid, isBench){
+  const i = playerInfo(pid);
+  const posClass = 'pos-'+(i.pos||'FLEX');
+  return `<div class="player-card ${isBench?'pc-bench':''}">
+    <div class="pc-pos ${posClass}">${i.pos}</div>
+    <div class="pc-info">
+      <div class="pc-name">${esc(i.name)}</div>
+      <div class="pc-meta">${i.team}${isBench?' · BENCH':''}</div>
+    </div>
+  </div>`;
+}
+
+function myRank(){
+  const idx = LG.standings.findIndex(t => t.isMe);
+  return idx>=0 ? idx+1 : 0;
+}
+function rankSuffix(n){
+  if(!n) return '—';
+  const s=['th','st','nd','rd'], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+
+function renderLeague(){
+  const el = document.getElementById('league-content');
+  let html = `<div class="section-label">${esc(LG.league.name||'League')} · ${LG.season} Standings</div>`;
+  LG.standings.forEach((t,i) => {
+    html += `<div class="standings-row ${t.isMe?'is-me':''}">
+      <div class="sr-rank">${i+1}</div>
+      <div class="sr-team">
+        <div class="sr-name">${esc(t.teamName)}</div>
+        <div class="sr-owner">@${esc(t.owner)}</div>
+      </div>
+      <div class="sr-rec">${t.wins}-${t.losses}${t.ties?('-'+t.ties):''}</div>
+      <div class="sr-pts">${t.pf.toFixed(1)}</div>
+    </div>`;
+  });
+  if(LG.history.length){
+    html += `<div class="section-label">League History</div>`;
+    html += `<div class="empty-msg" style="text-align:left;padding:8px 12px;font-size:14px;">I've loaded ${LG.history.length} previous season${LG.history.length>1?'s':''} (${LG.history.map(h=>h.season).join(', ')}). Ask the Coach about past champions, rivalries, or records!</div>`;
+  }
+  el.innerHTML = html;
+}
+
+function buildSuggestions(){
+  const sugg = document.getElementById('suggestions');
+  const ideas = [
+    "Who should I start this week?",
+    "Roast my roster",
+    "How's my team looking?",
+    "Who are the title favorites?",
+    "Any injury news on my players?",
+    "Tell me about our league history"
+  ];
+  sugg.innerHTML = ideas.map(t=>`<div class="sugg" onclick="sendText('${t.replace(/'/g,"\\'")}')">${t}</div>`).join('');
+}
+
+// ════════ AI CONTEXT ════════
+function buildSystemPrompt(){
+  // Compact league snapshot for the model
+  const myTeam = LG.myRoster ? {
+    name: LG.myTeamName,
+    record: (LG.myRoster.settings.wins||0)+'-'+(LG.myRoster.settings.losses||0),
+    rank: myRank(),
+    starters: (LG.myRoster.starters||[]).filter(p=>p&&p!=='0').map(pid=>{const i=playerInfo(pid);return `${i.name} (${i.pos}, ${i.team})`;}),
+    bench: (LG.myRoster.players||[]).filter(p=>!(LG.myRoster.starters||[]).includes(p)&&p&&p!=='0').map(pid=>{const i=playerInfo(pid);return `${i.name} (${i.pos}, ${i.team})`;})
+  } : null;
+
+  const standingsText = LG.standings.map((t,i)=>`${i+1}. ${t.teamName} (@${t.owner}) ${t.wins}-${t.losses}, ${t.pf.toFixed(0)} PF`).join('\n');
+
+  const historyText = LG.history.map(h=>{
+    const champ = (h.rosters||[]).slice().sort((a,b)=>((b.settings&&b.settings.wins)||0)-((a.settings&&a.settings.wins)||0))[0];
+    let champName = '?';
+    if(champ){ const u=(h.users||[]).find(x=>x.user_id===champ.owner_id); champName = u?((u.metadata&&u.metadata.team_name)||u.display_name):'?'; }
+    return `${h.season}: regular-season leader ${champName}`;
+  }).join('\n');
+
+  return `You are the AI General Manager for a fantasy football team in the "Goa Constrictors" league. You are sharp, fun, a little cocky, and deeply knowledgeable about fantasy football. You speak like a confident, witty fantasy analyst — think a mix of a sports-radio host and a stats nerd. Use the snake/constrictor theme playfully when it fits (squeezing opponents, striking, etc.) but don't overdo it.
+
+You have FULL access to this league's real data via Sleeper. Use it.
+
+THE USER is @${SLEEPER_USERNAME}${myTeam?', who manages "'+myTeam.name+'" (currently '+myTeam.record+', '+rankSuffix(myTeam.rank)+' place)':' (spectating this league)'}.
+
+${myTeam ? `USER'S STARTERS:\n${myTeam.starters.join('\n')}\n\nUSER'S BENCH:\n${myTeam.bench.join('\n')}\n` : ''}
+
+CURRENT STANDINGS (${LG.season}):
+${standingsText}
+
+${historyText ? `LEAGUE HISTORY:\n${historyText}\n` : ''}
+
+SEASON STATE: ${LG.nflState ? (LG.nflState.season_type+' '+LG.nflState.season+', Week '+LG.nflState.week) : 'unknown'}.
+
+RULES:
+- When asked about current/live things (this week's matchups, injuries, news, rankings, who to start THIS week), USE WEB SEARCH to get the latest info, then combine it with the roster data you have.
+- Keep responses conversational and reasonably concise (a few sentences to a short paragraph) unless asked for deep analysis.
+- You can reference specific players on the user's roster and specific teams in the league by name.
+- If voice is being used, keep it natural and not too long.
+- Be honest and useful: real start/sit logic, real analysis, not generic filler.`;
+}
+
+// ════════ CHAT ════════
+function showWelcome(){
+  document.getElementById('chat-scroll').innerHTML = document.getElementById('chat-scroll').innerHTML; // keep welcome
+}
+function replayChat(){
+  const sc = document.getElementById('chat-scroll');
+  sc.innerHTML = '';
+  history.forEach(m=>{
+    if(m.role==='user') addUser(m.content, false);
+    else addAI(typeof m.content==='string'?m.content:extractText(m.content), false);
+  });
+}
+function extractText(content){
+  if(typeof content==='string') return content;
+  if(Array.isArray(content)) return content.map(b=>b.text||'').join('');
+  return '';
+}
+
+async function processMessage(text){
+  if(busy||!text.trim()) return;
+  const wel = document.getElementById('chat-welcome'); if(wel) wel.remove();
+  addUser(text, true);
+  history.push({role:'user', content:text});
+  saveChat();
+
+  busy=true;
+  setSendDisabled(true);
+  const thinking = addThinking();
+
+  try {
+    const body = {
+      model: MODEL,
+      max_tokens: 1024,
+      system: buildSystemPrompt(),
+      messages: history.map(m=>({role:m.role, content:m.content})),
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }]
+    };
+    const r = await fetch(WORKER_URL, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    thinking.remove();
+
+    if(d.error){
+      addAI("⚠️ "+(d.error.message||'Something went wrong with the AI.'), true);
+      busy=false; setSendDisabled(false); return;
+    }
+
+    // Assemble text from content blocks (may include web_search use)
+    let replyText = '';
+    let usedSearch = false;
+    if(Array.isArray(d.content)){
+      d.content.forEach(b=>{
+        if(b.type==='text') replyText += b.text;
+        if(b.type==='server_tool_use' || b.type==='web_search_tool_result') usedSearch = true;
+      });
+    }
+    replyText = replyText.trim() || "I'm not sure how to answer that one.";
+
+    history.push({role:'assistant', content:d.content});
+    saveChat();
+    addAI(replyText, true, usedSearch);
+    speak(replyText);
+  } catch(e){
+    thinking.remove();
+    addAI("⚠️ Connection problem reaching the war room. Try again.", true);
+  }
+  busy=false;
+  setSendDisabled(false);
+}
+
+function sendText(preset){
+  const inp = document.getElementById('txt-input');
+  const text = preset || inp.value.trim();
+  if(!text) return;
+  if(!preset){ inp.value=''; autoGrow(inp); }
+  processMessage(text);
+}
+
+function addUser(text, scroll){
+  const d=document.createElement('div'); d.className='msg-u'; d.textContent=text;
+  document.getElementById('chat-scroll').appendChild(d);
+  if(scroll) scrollChat();
+}
+function addThinking(){
+  const w=document.createElement('div'); w.className='msg-a';
+  w.innerHTML='<div class="ma-snake">🐍</div><div class="ma-bubble"><div class="dots"><span></span><span></span><span></span></div></div>';
+  document.getElementById('chat-scroll').appendChild(w); scrollChat(); return w;
+}
+function addAI(text, scroll, usedSearch){
+  const w=document.createElement('div'); w.className='msg-a';
+  const searchTag = usedSearch ? '<div class="searching">🔎 searched the web</div>' : '';
+  w.innerHTML='<div class="ma-snake">🐍</div><div class="ma-bubble"><span class="ma-name">AI GM</span>'+fmt(text)+searchTag+'</div>';
+  document.getElementById('chat-scroll').appendChild(w);
+  if(scroll) scrollChat();
+}
+function fmt(t){
+  return esc(t)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\n/g,'<br>');
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function scrollChat(){const c=document.getElementById('chat-scroll');setTimeout(()=>c.scrollTop=c.scrollHeight,50);}
+function setSendDisabled(v){document.getElementById('send-btn').disabled=v;}
+
+// ════════ VIEWS ════════
+function switchView(id, tab){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  tab.classList.add('active');
+}
+
+// ════════ VOICE ════════
+function initVoice(){
+  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ document.getElementById('mic-btn').style.opacity='.4'; return; }
+  recognition = new SR();
+  recognition.continuous=true; recognition.interimResults=true; recognition.lang='en-US';
+  let finalT='', bestT='', timer=null;
+
+  recognition.onstart=()=>{
+    isListening=true;finalT='';bestT='';
+    document.getElementById('mic-btn').classList.add('active');
+    const vs=document.getElementById('voice-status'); vs.classList.add('show'); vs.textContent='// listening... //';
+  };
+  recognition.onresult=(e)=>{
+    let interim='',final='';
+    for(let i=0;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else interim+=t;}
+    finalT=final;
+    const combined=(final+' '+interim).trim();
+    if(combined)bestT=combined;
+    document.getElementById('voice-status').textContent=bestT||'// listening... //';
+    clearTimeout(timer);
+    timer=setTimeout(()=>{ if(isListening){try{recognition.stop();}catch(e){}} },1400);
+  };
+  recognition.onerror=(e)=>{
+    clearTimeout(timer);
+    if(e.error==='not-allowed'){document.getElementById('voice-status').textContent='// mic blocked — allow in browser //';}
+    else if(e.error==='no-speech'){document.getElementById('voice-status').textContent='// no speech heard //';}
+    stopListenUI();
+  };
+  recognition.onend=()=>{
+    clearTimeout(timer);
+    stopListenUI();
+    const txt=(finalT.trim()||bestT.trim());
+    if(txt) processMessage(txt);
+    else { const vs=document.getElementById('voice-status'); setTimeout(()=>vs.classList.remove('show'),1500); }
+  };
+}
+function toggleListen(){
+  if(busy||isSpeaking) return;
+  if(!recognition){ document.getElementById('txt-input').focus(); return; }
+  if(isListening){ try{recognition.stop();}catch(e){} }
+  else { if(window.speechSynthesis)window.speechSynthesis.cancel(); try{recognition.start();}catch(e){} }
+}
+function stopListenUI(){
+  isListening=false;
+  document.getElementById('mic-btn').classList.remove('active');
+}
+function speak(text){
+  if(!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  // strip emojis/markdown for speech
+  const clean = text.replace(/[*_#`>]/g,'').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu,'').trim();
+  if(!clean) return;
+  isSpeaking=true;
+  const u=new SpeechSynthesisUtterance(clean);
+  u.rate=1.02; u.pitch=1; u.volume=1;
+  const voices=window.speechSynthesis.getVoices();
+  const pref=voices.find(v=>v.lang.startsWith('en')&&/male|daniel|alex|david/i.test(v.name))||voices.find(v=>v.lang.startsWith('en'));
+  if(pref)u.voice=pref;
+  u.onend=()=>{isSpeaking=false;};
+  u.onerror=()=>{isSpeaking=false;};
+  window.speechSynthesis.speak(u);
+}
+if(window.speechSynthesis){ window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices(); }
+
+// ════════ HELPERS ════════
+function onKey(e){ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendText();} }
+function autoGrow(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,110)+'px'; }
+function resetLeague(){
+  if(confirm('Disconnect from this league and enter a different League ID?')){
+    try{ localStorage.removeItem('goa_league'); localStorage.removeItem('goa_chat'); }catch(e){}
+    location.reload();
+  }
+}
+
+// ════════ AUTO-RECONNECT IF SAVED ════════
+window.addEventListener('load', ()=>{
+  const saved = getSavedLeagueId();
+  if(saved){
+    document.getElementById('league-input').value = saved;
+    connectLeague();
+  }
+});
+</script>
+</body>
+</html>
