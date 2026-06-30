@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goa Constrictors — Data Baker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Roboto+Mono:wght@400;500;700&family=Spectral:ital@0;1&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#1a1612;color:#e8dcc4;font-family:'Spectral',serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .card{width:100%;max-width:580px;background:linear-gradient(160deg,#37291c,#1a1612);border:1px solid #9a7728;border-radius:8px;padding:28px;}
+  h1{font-family:'Oswald',sans-serif;font-weight:700;text-transform:uppercase;color:#c8a04f;font-size:26px;line-height:1;letter-spacing:.02em;}
+  .sub{font-style:italic;color:#b09a72;margin:8px 0 18px;font-size:15px;line-height:1.5;}
+  label{font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#9a7728;display:block;margin-bottom:6px;margin-top:14px;}
+  input{width:100%;background:#2b2118;border:1.5px solid #9a7728;border-radius:4px;padding:13px 15px;font-size:16px;color:#e8dcc4;font-family:'Roboto Mono',monospace;outline:none;text-align:center;}
+  input:focus{border-color:#c8a04f;}
+  .row{display:flex;gap:10px;align-items:center;}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px;color:#b09a72;cursor:pointer;}
+  .chk input{width:auto;}
+  button{width:100%;font-family:'Oswald',sans-serif;font-weight:700;font-size:17px;letter-spacing:.06em;text-transform:uppercase;color:#1a1612;background:#c8a04f;border:none;border-radius:4px;padding:14px;cursor:pointer;margin-top:18px;box-shadow:0 4px 0 #9a7728;}
+  button:active{transform:translateY(3px);box-shadow:0 1px 0 #9a7728;}
+  button:disabled{background:#37291c;color:#897455;box-shadow:none;}
+  #log{margin-top:18px;font-family:'Roboto Mono',monospace;font-size:12px;line-height:1.7;color:#b09a72;max-height:340px;overflow-y:auto;background:#14100c;border:1px solid #4a3a26;border-radius:4px;padding:14px;display:none;}
+  #log.show{display:block;}
+  .ok{color:#7da06a;}.warn{color:#d98a3a;}.big{color:#c8a04f;font-weight:700;}.dim{color:#897455;}
+  #dl{display:none;margin-top:14px;}
+  #dl.show{display:block;}
+  .step{font-size:13px;color:#b09a72;line-height:1.7;margin-top:16px;border-top:1px solid #4a3a26;padding-top:14px;display:none;}
+  .step.show{display:block;}
+  .step b{color:#c8a04f;}
+  code{background:#2b2118;padding:1px 6px;border-radius:3px;font-family:'Roboto Mono',monospace;font-size:12px;color:#e3c478;}
+  .note{font-size:12px;color:#897455;margin-top:6px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Data Baker</h1>
+  <div class="sub">Run this once. It pulls your league's full history, computes every manager's tendencies, writes their scouting reports, and gives you a <code>league-data.js</code> that ships those finished cards inside the app — so the Managers tab opens instantly on every device, with zero work left for the app to do.</div>
+
+  <label>Sleeper League ID</label>
+  <input id="lg" inputmode="numeric" placeholder="paste the long number" />
+
+  <label>Your Cloudflare Worker URL <span style="text-transform:none;letter-spacing:0;color:#897455">(for generating reports)</span></label>
+  <input id="wk" placeholder="https://late-water-a0c8.joshberger35.workers.dev" value="https://late-water-a0c8.joshberger35.workers.dev" />
+  <div class="note">This is the same worker the app uses. The baker calls it to write each manager's scouting report so they come pre-made.</div>
+
+  <label class="chk"><input type="checkbox" id="genReports" checked> Generate AI scouting reports (recommended)</label>
+  <div class="note">If unchecked, it bakes the tendency stats only (still instant) and the app writes reports on demand.</div>
+
+  <button id="go" onclick="run()">Fetch & Bake Everything</button>
+
+  <div id="log"></div>
+  <button id="dl" onclick="download()">⬇ Download league-data.js</button>
+
+  <div class="step" id="steps">
+    <b>Next:</b> put <code>league-data.js</code> in your GitHub repo (same folder as <code>index.html</code>, the repo root), commit, and you're done. The app loads it automatically — instant managers, no spinning.
+  </div>
+</div>
+
+<script>
+const SLEEPER="https://api.sleeper.app/v1";
+const MODEL="claude-sonnet-4-6";
+let BAKED=null;
+
+function log(msg,cls){const l=document.getElementById('log');l.classList.add('show');l.innerHTML+='<div'+(cls?(' class="'+cls+'"'):'')+'>'+msg+'</div>';l.scrollTop=l.scrollHeight;}
+async function sf(path){const r=await fetch(SLEEPER+path);if(!r.ok)throw new Error('Sleeper '+r.status+' on '+path);return r.json();}
+function esc(s){return String(s==null?'':s);}
+
+// ===== identical tendency engine to the app =====
+function topKey(obj){let best=null,n=-1;for(const k in obj){if(obj[k]>n){n=obj[k];best=k;}}return best?{pos:best,n:n}:null;}
+function topPartner(parts,M){let best=null,n=-1;for(const uid in parts){if(parts[uid]>n){n=parts[uid];best=uid;}}return best?{name:(M[best]&&M[best].name)||'?',n:n}:null;}
+
+function blankProfile(uid,name,handle){return {userId:uid,name:name||'Manager',handle:handle||'',seasons:0,titles:0,record:{w:0,l:0,t:0},pf:0,pa:0,draft:{total:0,byPos:{},auctionSpend:0,auctionPicks:0,maxBid:0,firstPicksPos:[]},trades:0,tradePartners:{},waivers:0,faabSpent:0,faabBids:[],maxFaab:0,waiverByPos:{},adds:0,drops:0};}
+
+function accumulate(M,ensure,S,playerPos){
+  const om={};(S.rosters||[]).forEach(r=>om[r.roster_id]=r.owner_id);
+  (S.rosters||[]).forEach(r=>{const m=ensure(r.owner_id);const s=r.settings||{};m.record.w+=(s.wins||0);m.record.l+=(s.losses||0);m.record.t+=(s.ties||0);m.pf+=((s.fpts||0)+(s.fpts_decimal||0)/100);m.pa+=((s.fpts_against||0)+(s.fpts_against_decimal||0)/100);});
+  const seen={};(S.rosters||[]).forEach(r=>{if(!seen[r.owner_id]){seen[r.owner_id]=1;ensure(r.owner_id).seasons+=1;}});
+  if(S.championId&&M[S.championId])M[S.championId].titles+=1;
+  (S.picks||[]).forEach(pk=>{const uid=pk.picked_by||om[pk.roster_id];if(!uid)return;const m=ensure(uid);const pos=(pk.metadata&&pk.metadata.position)||'?';m.draft.total+=1;m.draft.byPos[pos]=(m.draft.byPos[pos]||0)+1;const amt=pk.metadata&&pk.metadata.amount?parseInt(pk.metadata.amount):null;if(amt!=null&&!isNaN(amt)){m.draft.auctionSpend+=amt;m.draft.auctionPicks+=1;if(amt>m.draft.maxBid)m.draft.maxBid=amt;}if(pk.round===1)m.draft.firstPicksPos.push(pos);});
+  (S.transactions||[]).forEach(t=>{
+    if(t.type==='trade'){(t.roster_ids||[]).forEach(rid=>{const uid=om[rid];if(uid&&M[uid])M[uid].trades+=1;});const owners=(t.roster_ids||[]).map(rid=>om[rid]).filter(Boolean);owners.forEach(a=>owners.forEach(b=>{if(a!==b){ensure(a).tradePartners[b]=(ensure(a).tradePartners[b]||0)+1;}}));}
+    else{const rid=(t.roster_ids||[])[0];const uid=om[rid];if(!uid)return;const m=ensure(uid);if(t.type==='waiver')m.waivers+=1;const bid=t.settings&&t.settings.waiver_bid;if(bid!=null){m.faabSpent+=bid;m.faabBids.push(bid);if(bid>m.maxFaab)m.maxFaab=bid;}Object.keys(t.adds||{}).forEach(pid=>{m.adds+=1;const pos=(playerPos[pid])||'?';m.waiverByPos[pos]=(m.waiverByPos[pos]||0)+1;});Object.keys(t.drops||{}).forEach(()=>{m.drops+=1;});}
+  });
+}
+
+function computeProfiles(currentUsers,currentRosters,currentPicks,currentTxns,history,playerPos){
+  const M={};
+  currentUsers.forEach(u=>{M[u.user_id]=blankProfile(u.user_id,(u.metadata&&u.metadata.team_name)||u.display_name,u.display_name);});
+  const ensure=(uid,uname)=>{if(!M[uid])M[uid]=blankProfile(uid,uname,uname);return M[uid];};
+  accumulate(M,ensure,{rosters:currentRosters,picks:currentPicks,transactions:currentTxns,championId:null},playerPos);
+  history.forEach(h=>accumulate(M,ensure,{rosters:h.rosters,picks:h.picks,transactions:h.transactions,championId:h.championId},playerPos));
+  Object.values(M).forEach(m=>{m.faabAvg=m.faabBids.length?Math.round(m.faabBids.reduce((a,b)=>a+b,0)/m.faabBids.length):0;m.topDraftPos=topKey(m.draft.byPos);m.topWaiverPos=topKey(m.waiverByPos);m.topPartner=topPartner(m.tradePartners,M);m.tradeRate=m.seasons?(m.trades/m.seasons).toFixed(1):m.trades;});
+  return M;
+}
+
+async function generateReport(workerUrl,m){
+  const draftPos=Object.entries(m.draft.byPos).sort((a,b)=>b[1]-a[1]).map(([p,n])=>p+':'+n).join(', ')||'no draft data';
+  const waivPos=Object.entries(m.waiverByPos).sort((a,b)=>b[1]-a[1]).map(([p,n])=>p+':'+n).join(', ')||'none';
+  const dossier=[
+    'Manager: '+m.name+' (@'+m.handle+')',
+    'All-time record: '+m.record.w+'-'+m.record.l+(m.record.t?('-'+m.record.t):'')+', '+m.titles+' titles, '+m.seasons+' seasons, '+m.pf.toFixed(0)+' total PF',
+    'Draft tendency by position: '+draftPos,
+    m.draft.auctionPicks?('Auction: spent $'+m.draft.auctionSpend+' over '+m.draft.auctionPicks+' picks, biggest single bid $'+m.draft.maxBid):'No auction history',
+    'Trades: '+m.trades+' total'+(m.topPartner?(', most often with '+m.topPartner.name):''),
+    'Waivers/FAAB: '+m.waivers+' waiver claims, $'+m.faabSpent+' FAAB spent, avg bid $'+m.faabAvg+', max bid $'+m.maxFaab,
+    'Waiver targets by position: '+waivPos,
+    'Total adds/drops: '+m.adds+'/'+m.drops
+  ].join('\n');
+  const body={model:MODEL,max_tokens:420,
+    system:"You are a sharp fantasy football scout writing a SHORT scouting report on a rival manager based ONLY on their real behavioral data. 3-4 punchy sentences. Call out their clearest tendencies (draft priorities, auction aggression, trade frequency, FAAB/waiver style) and one exploitable weakness or pattern. Confident and specific, a little witty. No headers, no bullet points, no preamble. If data is thin, say so briefly rather than inventing.",
+    messages:[{role:'user',content:'Write the scouting report.\n\n'+dossier}]};
+  const r=await fetch(workerUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.error)throw new Error(d.error.message||'worker error');
+  let txt='';if(Array.isArray(d.content))d.content.forEach(b=>{if(b.type==='text')txt+=b.text;});
+  return txt.trim();
+}
+
+async function run(){
+  const id=document.getElementById('lg').value.trim();
+  const workerUrl=document.getElementById('wk').value.trim().replace(/\/$/,'');
+  const doReports=document.getElementById('genReports').checked;
+  if(!/^\d+$/.test(id)){log('⚠ Please paste a valid numeric League ID.','warn');return;}
+  if(doReports&&!/^https?:\/\//.test(workerUrl)){log('⚠ Enter your Cloudflare Worker URL (or uncheck report generation).','warn');return;}
+  const btn=document.getElementById('go');btn.disabled=true;btn.textContent='Working…';
+  document.getElementById('log').innerHTML='';document.getElementById('dl').classList.remove('show');document.getElementById('steps').classList.remove('show');
+
+  try{
+    log('Reading current league…');
+    const league=await sf('/league/'+id);
+    const [curUsers,curRosters,nflState]=await Promise.all([sf('/league/'+id+'/users'),sf('/league/'+id+'/rosters'),sf('/state/nfl').catch(()=>({week:1}))]);
+    log('✓ '+league.name+' ('+league.season+') — '+curRosters.length+' teams','ok');
+
+    // current draft + picks + transactions
+    log('Pulling current season picks & transactions…');
+    let curPicks=[];const curDrafts=await sf('/league/'+id+'/drafts').catch(()=>[]);
+    if(curDrafts&&curDrafts.length)curPicks=await sf('/draft/'+curDrafts[0].draft_id+'/picks').catch(()=>[]);
+    const curWeeks=[];for(let w=1;w<=Math.min(18,(nflState.week||1)+1);w++)curWeeks.push(w);
+    const curTxnArr=await Promise.all(curWeeks.map(w=>sf('/league/'+id+'/transactions/'+w).catch(()=>[])));
+    const curTxns=curTxnArr.flat().filter(t=>t&&t.status==='complete');
+
+    // player positions (small map we extract from the big file once)
+    log('Loading player position map…');
+    const playersRaw=await sf('/players/nfl');
+    const playerPos={};for(const pid in playersRaw){const p=playersRaw[pid];if(p&&p.position)playerPos[pid]=p.position;}
+    log('✓ '+Object.keys(playerPos).length+' players mapped','ok');
+
+    // walk history chain
+    log('Finding past seasons…');
+    const seasonIds=[];let prev=league.previous_league_id,guard=0;
+    while(prev&&prev!=='0'&&guard<14){const pl=await sf('/league/'+prev);seasonIds.push({leagueId:prev,season:pl.season});prev=pl.previous_league_id;guard++;}
+    log('✓ '+seasonIds.length+' past season'+(seasonIds.length!==1?'s':'')+(seasonIds.length?': '+seasonIds.map(s=>s.season).join(', '):''),'ok');
+
+    log('Pulling history for every season in parallel…');
+    const history=await Promise.all(seasonIds.map(async si=>{
+      const weeks=[];for(let w=1;w<=17;w++)weeks.push(w);
+      const [pr,pu,wb,ds,...txnA]=await Promise.all([
+        sf('/league/'+si.leagueId+'/rosters').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/users').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/winners_bracket').catch(()=>[]),
+        sf('/league/'+si.leagueId+'/drafts').catch(()=>[]),
+        ...weeks.map(w=>sf('/league/'+si.leagueId+'/transactions/'+w).catch(()=>[]))
+      ]);
+      let picks=[];if(ds&&ds.length)picks=await sf('/draft/'+ds[0].draft_id+'/picks').catch(()=>[]);
+      let champId=null,champName=null;const fin=(wb||[]).find(m=>m.p===1);
+      if(fin&&fin.w){const wr=pr.find(r=>r.roster_id===fin.w);if(wr){champId=wr.owner_id;const wu=pu.find(u=>u.user_id===wr.owner_id);champName=wu?((wu.metadata&&wu.metadata.team_name)||wu.display_name):null;}}
+      const txns=txnA.flat().filter(t=>t&&t.status==='complete');
+      log('  · '+si.season+': '+pr.length+' teams, '+picks.length+' picks, '+txns.length+' moves','dim');
+      return {
+        season:si.season,leagueId:si.leagueId,champion:champName,championId:champId,
+        rosters:pr.map(r=>({roster_id:r.roster_id,owner_id:r.owner_id,settings:r.settings})),
+        users:pu.map(u=>({user_id:u.user_id,display_name:u.display_name,metadata:u.metadata?{team_name:u.metadata.team_name}:null})),
+        picks:picks.map(p=>({picked_by:p.picked_by,roster_id:p.roster_id,round:p.round,metadata:p.metadata?{position:p.metadata.position,amount:p.metadata.amount}:null})),
+        transactions:txns.map(t=>({type:t.type,roster_ids:t.roster_ids,adds:t.adds,drops:t.drops,settings:t.settings?{waiver_bid:t.settings.waiver_bid}:null,leg:t.leg}))
+      };
+    }));
+
+    // compute profiles (same logic as the app)
+    log('Computing manager tendencies…','big');
+    const profiles=computeProfiles(curUsers,curRosters,curPicks,curTxns,history,playerPos);
+    const mgrList=Object.values(profiles).filter(m=>m.userId);
+    log('✓ '+mgrList.length+' managers profiled','ok');
+
+    // generate reports
+    const reports={};
+    if(doReports){
+      log('Writing scouting reports (one per manager)…','big');
+      for(let i=0;i<mgrList.length;i++){
+        const m=mgrList[i];
+        try{
+          const rep=await generateReport(workerUrl,m);
+          reports[m.userId]=rep;
+          log('  ✓ '+m.name,'ok');
+        }catch(e){
+          log('  ✗ '+m.name+' — '+e.message+' (app will write this one live)','warn');
+        }
+      }
+    } else {
+      log('Skipping report generation (stats only).','dim');
+    }
+
+    BAKED={
+      leagueId:id,
+      previousLeagueId:league.previous_league_id||'',
+      builtAt:Date.now(),
+      season:league.season,
+      history:history,
+      profiles:profiles,
+      reports:reports
+    };
+    const kb=Math.round(JSON.stringify(BAKED).length/1024);
+    log('','');
+    log('✓✓ DONE — '+mgrList.length+' managers, '+Object.keys(reports).length+' reports baked ('+kb+' KB)','big');
+    log('Click download below.','ok');
+    document.getElementById('dl').classList.add('show');
+    document.getElementById('steps').classList.add('show');
+  }catch(e){
+    log('✗ '+e.message,'warn');
+    log('If this says "Failed to fetch", Sleeper may be rate-limiting — wait a minute and retry.','warn');
+  }
+  btn.disabled=false;btn.textContent='Fetch & Bake Everything';
+}
+
+function download(){
+  if(!BAKED)return;
+  const content='// Goa Constrictors — pre-baked league data + scouting reports\n// Generated '+new Date().toISOString()+'\n// Drop next to index.html in your repo root. The app loads it automatically.\nwindow.GOA_BAKED_DATA = '+JSON.stringify(BAKED)+';\n';
+  const blob=new Blob([content],{type:'text/javascript'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='league-data.js';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+</script>
+</body>
+</html>
