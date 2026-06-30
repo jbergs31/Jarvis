@@ -325,56 +325,70 @@ function initSpeech(){
     return;
   }
   recognition=new SR();
-  recognition.continuous=false;
+  recognition.continuous=true;
   recognition.interimResults=true;
   recognition.lang='en-US';
   recognition.maxAlternatives=1;
 
-  let finalText='',gotResult=false,silenceTimer=null;
+  let finalText='',bestText='',silenceTimer=null,manualStop=false;
 
   recognition.onstart=()=>{
-    isListening=true;gotResult=false;finalText='';
+    isListening=true;finalText='';bestText='';manualStop=false;
     setStatus('LISTENING');
     document.getElementById('vs').textContent='// LISTENING... SPEAK NOW //';
     document.getElementById('mic').classList.add('active');
     document.getElementById('ar').classList.add('listening');
-    document.getElementById('al').textContent='LISTENING...';
+    document.getElementById('al').textContent='TAP TO SEND';
     startWave();
   };
 
   recognition.onresult=(e)=>{
     let interim='',final='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
+    for(let i=0;i<e.results.length;i++){
       const t=e.results[i][0].transcript;
       if(e.results[i].isFinal){final+=t;}else{interim+=t;}
     }
-    if(final){finalText+=final;gotResult=true;}
-    document.getElementById('vs').textContent=(finalText+interim)||'// LISTENING... //';
+    finalText=final;
+    // bestText = whatever we have heard so far, final OR interim.
+    // On iOS the final flag often never fires, so interim is all we get.
+    const combined=(final+' '+interim).trim();
+    if(combined) bestText=combined;
+    document.getElementById('vs').textContent=bestText||'// LISTENING... //';
 
-    // iOS workaround: after we get speech, set a short timer to stop
+    // Restart the silence timer every time new words arrive.
+    // When the user pauses ~1.4s, we stop and send.
     clearTimeout(silenceTimer);
     silenceTimer=setTimeout(()=>{
-      if(isListening){ try{recognition.stop();}catch(e){} }
-    },1200);
+      if(isListening){ manualStop=true; try{recognition.stop();}catch(e){} }
+    },1400);
   };
 
   recognition.onerror=(e)=>{
-    stopListenUI();
+    clearTimeout(silenceTimer);
     if(e.error==='not-allowed'||e.error==='service-not-allowed'){
-      document.getElementById('vs').textContent='// MIC BLOCKED — CHECK BROWSER PERMISSIONS //';
+      stopListenUI();
+      document.getElementById('vs').textContent='// MIC BLOCKED — ALLOW MIC IN SAFARI //';
     }else if(e.error==='no-speech'){
-      document.getElementById('vs').textContent='// NO SPEECH DETECTED — TRY AGAIN //';
-    }else if(e.error!=='aborted'){
+      stopListenUI();
+      document.getElementById('vs').textContent='// NO SPEECH HEARD — TAP AND TRY AGAIN //';
+    }else if(e.error==='aborted'){
+      // aborted fires when we stop() on purpose — don't treat as failure
+    }else{
+      stopListenUI();
       document.getElementById('vs').textContent='// '+e.error.toUpperCase()+' //';
     }
   };
 
   recognition.onend=()=>{
     clearTimeout(silenceTimer);
-    const txt=finalText.trim();
     stopListenUI();
-    if(txt){ processInput(txt); }
-    else if(!busy){ document.getElementById('vs').textContent='// STANDBY //'; }
+    // Use the best transcript we captured — final if we got it, otherwise interim.
+    const txt=(finalText.trim()||bestText.trim());
+    if(txt){
+      processInput(txt);
+    }else if(!busy){
+      document.getElementById('vs').textContent='// STANDBY — TAP TO TRY AGAIN //';
+    }
   };
 }
 
